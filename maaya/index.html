@@ -1,0 +1,994 @@
+
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Maaya glyphs</title>
+<!--open source libraries downloaded here http://learningwebgl.com/blog/?page_id=1217-->
+<script type="text/javascript" src="./webgl_lib/glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="./webgl_lib/webgl-utils.js"></script>
+
+<!--my code-->
+<script type="text/javascript" src="./def.js"></script>
+<script type="text/javascript" src="./texture.js"></script>
+<script type="text/javascript" src="./colid.js"></script>
+<script type="text/javascript" src="./load.js"></script>
+<script type="text/javascript" src="./dbQuery.js"></script>
+
+
+<script id="shader-fs" type="x-shader/x-fragment">
+    precision mediump float;
+    varying vec3 vCoord;
+    varying vec3 vNormal;
+    varying vec2 vUv;
+	varying vec2 vUv2;
+    vec3 light= normalize( vec3(1,0.2,-0.5));
+    vec3 light2= normalize( vec3(-3,-3,-0.5));
+    vec3 ref;
+    vec3 p= vec3(0,0,1);
+    float i1, i2;
+    float s;
+    vec4 colorS;
+	vec4 colorSFond;
+    vec3 color;
+	vec3 colorFond;
+    vec3 normal;
+
+    uniform sampler2D u_image1;
+	uniform sampler2D u_image2;
+     
+    float specular(in vec3 l,in vec3 n){
+		vec3 view= vec3(0.,0.,1.);
+		vec3 ref = ((2.*dot(n,view))*n)-view ;
+		float s=max(0.,-dot( ref, l));	
+		s=s*s;
+		s=s*s;
+
+	return s;
+    }
+   
+   
+    void main(void) {
+		colorS = texture2D(u_image1, vec2(vUv.x, vUv.y));
+		colorSFond = texture2D(u_image2, vec2(vUv2.x, vUv2.y));
+		color = vec3(1.-colorS[0],1.-colorS[1],1.-colorS[2]);
+		colorFond = vec3(colorSFond[0], colorSFond[1], colorSFond[2]);
+		normal= normalize(vNormal);
+
+		gl_FragColor = vec4(colorFond-color*0.75, colorSFond[3]);
+
+    }
+
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+    attribute vec3 aNormal;
+    attribute vec2 aUv;
+	attribute vec2 aUv2;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    vec4 normal;
+    vec4 pos;
+
+    varying vec2 vUv;
+	varying vec2 vUv2;
+    varying vec3 vCoord;
+    varying vec3 vNormal;
+    
+
+    void main(void) {
+		pos = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        gl_Position = pos;
+        normal = uMVMatrix * vec4(aNormal, 0.0);
+        vCoord= vec3( pos[0], pos[1], pos[2] );
+		vNormal= vec3(normal[0], normal[1], normal[2]);
+		vUv= aUv;
+		vUv2= aUv2;
+    }
+</script>
+
+
+<script type="text/javascript">
+"use strict";
+
+//Initialization OpenGL, thise part of the code come from this source
+//http://learningwebgl.com/blog/?page_id=1217
+var gl;
+
+function initGL(canvas) {
+	try {
+		gl = canvas.getContext('webgl',{alpha:false, antialias:true}) ;
+		gl.viewportWidth = canvas.width;
+		gl.viewportHeight = canvas.height;
+	} catch (e) {
+	}
+	if (!gl) {
+          alert("Could not initialise WebGL, sorry :-(");
+	}
+}
+
+function getShader(gl, id) {
+	var shaderScript = document.getElementById(id);
+		if (!shaderScript) {
+		return null;
+	}
+
+	var str = "";
+	var k = shaderScript.firstChild;
+	while (k) {
+		if (k.nodeType == 3) {
+			str += k.textContent;
+		}
+		k = k.nextSibling;
+	}
+
+	var shader;
+	if (shaderScript.type == "x-shader/x-fragment") {
+		shader = gl.createShader(gl.FRAGMENT_SHADER);
+	} else if (shaderScript.type == "x-shader/x-vertex") {
+		shader = gl.createShader(gl.VERTEX_SHADER);
+	} else {
+		return null;
+	}
+
+	gl.shaderSource(shader, str);
+	gl.compileShader(shader);
+
+	if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+		alert(gl.getShaderInfoLog(shader));
+		return null;
+	}
+
+ 	return shader;
+}
+
+var shaderProgram;
+
+function initShaders() {
+	var fragmentShader = getShader(gl, "shader-fs");
+	var vertexShader = getShader(gl, "shader-vs");
+
+	shaderProgram = gl.createProgram();
+	gl.attachShader(shaderProgram, vertexShader);
+	gl.attachShader(shaderProgram, fragmentShader);
+	gl.linkProgram(shaderProgram);
+
+	if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+		alert("Could not initialise shaders");
+	}
+
+	gl.useProgram(shaderProgram);
+
+	shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+	gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+	shaderProgram.uvAttribute = gl.getAttribLocation(shaderProgram, "aUv");
+	gl.enableVertexAttribArray(shaderProgram.uvAttribute);
+
+	shaderProgram.uvAttribute2 = gl.getAttribLocation(shaderProgram, "aUv2");
+	gl.enableVertexAttribArray(shaderProgram.uvAttribute2);
+
+	shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+	shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+		
+	shaderProgram.samplerUniform1= gl.getUniformLocation(shaderProgram, "u_image1");
+	shaderProgram.samplerUniform2= gl.getUniformLocation(shaderProgram, "u_image2");
+}
+
+var pMatrix = mat4.create();
+
+function setMatrixUniforms(mvMatrix) {
+    gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+    gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+}
+ 
+function initBuffers( world ){
+		
+	for (var i=1; i < world.objets.length; i++){
+		initBuffer( world.objets[i] );
+	}
+}
+
+/////////////////////////////////
+//
+// use when we change the vertices positions of an object, we need to send the new buffers to the GPU
+//
+/////////////////////////////////
+function updateVertex( objet ){
+	//vertices
+	gl.bindBuffer(gl.ARRAY_BUFFER,objet.vBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array( objet.vertices), gl.STATIC_DRAW);
+	objet.vBuffer.itemSize = 3;
+	objet.vBuffer.numItems = objet.vertices.length/3;
+
+	//uvs2
+	gl.bindBuffer(gl.ARRAY_BUFFER, objet.uvBuffer2);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objet.uvs2), gl.STATIC_DRAW);
+	objet.uvBuffer2.itemSize = 2;
+	objet.uvBuffer2.numItems = objet.uvs2.length/2;
+}
+
+/////////////////////////////////
+//
+// use when we change the topology of an object, i.e which vertex forms which triangle, we need to send the new buffers to the GPU
+//
+/////////////////////////////////
+function updateGeometry( objet ){
+	updateVertex( objet );
+
+	//uvs
+	gl.bindBuffer(gl.ARRAY_BUFFER, objet.uvBuffer);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objet.uvs), gl.STATIC_DRAW);
+	objet.uvBuffer.itemSize = 2;
+	objet.uvBuffer.numItems = objet.uvs.length/2;
+
+	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, objet.fBuffer);   
+	gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array( objet.faces), gl.STATIC_DRAW);
+	objet.fBuffer.itemSize = 1;
+	objet.fBuffer.numItems = objet.faces.length;
+}
+
+function initBuffer( objet ) {
+
+	mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 500.0, pMatrix);//hum
+	//vertics
+    objet.vBuffer= gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,objet.vBuffer);
+		
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array( objet.vertices), gl.STATIC_DRAW);
+    objet.vBuffer.itemSize = 3;
+    objet.vBuffer.numItems = objet.vertices.length/3;
+
+	//face elements
+    objet.fBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, objet.fBuffer);
+
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array( objet.faces), gl.STATIC_DRAW);
+    objet.fBuffer.itemSize = 1;
+    objet.fBuffer.numItems = objet.faces.length;
+	
+	//uv coord
+ 	objet.uvBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, objet.uvBuffer);
+	
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objet.uvs), gl.STATIC_DRAW);
+	objet.uvBuffer.itemSize = 2;
+	objet.uvBuffer.numItems = objet.uvs.length/2;
+
+	//uv coord 2
+	objet.uvBuffer2 = gl.createBuffer();
+	gl.bindBuffer(gl.ARRAY_BUFFER, objet.uvBuffer2);
+      
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(objet.uvs2), gl.STATIC_DRAW);
+	objet.uvBuffer2.itemSize = 2;
+	objet.uvBuffer2.numItems = objet.uvs2.length/2;
+}
+
+/////////////////////////////////
+//
+//	we ask openGl to render the buffers in memory, we iterate over all the objects because we want to render them all
+//
+/////////////////////////////////
+function drawScene( world ) {
+	var objets = world.objets;
+
+	for (var i=1; i< objets.length; i++){		
+        gl.bindBuffer(gl.ARRAY_BUFFER, objets[i].vBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, objets[i].vBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+		gl.bindBuffer(gl.ARRAY_BUFFER, objets[i].uvBuffer);
+		gl.vertexAttribPointer(shaderProgram.uvAttribute, objets[i].uvBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, objets[i].uvBuffer2);
+		gl.vertexAttribPointer(shaderProgram.uvAttribute2,  objets[i].uvBuffer2.itemSize, gl.FLOAT, false, 0, 0);
+		
+		gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, objets[i].tex);
+        gl.uniform1i(shaderProgram.samplerUniform1, 0);
+
+		gl.activeTexture(gl.TEXTURE1);
+			
+        gl.bindTexture(gl.TEXTURE_2D, objets[i].texFond.tex);
+        gl.uniform1i(shaderProgram.samplerUniform2, 1);
+
+		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, objets[i].fBuffer);
+       	 setMatrixUniforms(objets[i].matrix);
+
+		gl.enable( gl.BLEND );
+		gl.blendFunc( gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA );
+
+        gl.drawElements(gl.TRIANGLES, objets[i].fBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+	}
+}
+
+/////////////////////////////////
+//
+//	change direction global to local
+//
+/////////////////////////////////
+function gloToLoc(objet,v){
+	var x=[0,0,0,0];
+	var m = mat4.create();
+    mat4.identity(m);
+	mat4.rotate(m, objet.rot[1], [0, 1, 0]);
+	mat4.rotate(m, objet.rot[0], [1, 0, 0]);
+	mat4.multiplyVec4( m,[v[0],v[1],v[2],0], x);
+	return x;
+}
+
+function gridOff(world, t){
+	var on = t.getAttribute('data');
+	if ( on == 1){
+		t.setAttribute('data',0);
+		t.innerHTML="grid OFF";
+		world.objets.push(world.grid);
+	}else{
+		t.setAttribute('data',1);
+		t.innerHTML="grid ON";
+		world.objets.length=world.objets.length-1;
+	}
+}
+
+/////////////////////////////////
+//
+//	zoom to a Glyphe according to its id
+//
+/////////////////////////////////
+function centerGlyphe(world, clusterI, imageI){
+	var x = world.objets[clusterI].pos[0] + world.objets[clusterI].vertices[imageI];
+	var y = world.objets[clusterI].pos[1] + world.objets[clusterI].vertices[imageI + 1];
+
+	world.objets[0].pos=[-x, -y, -7];
+	world.fz=4;
+}
+
+/////////////////////////////////
+//
+//	keep the geometry data (vetices , uv coord ) of clusters according 
+//	to an array of glyphs id , this is useful for showing only the glyhpBlocks that are present in a SQL request
+//
+/////////////////////////////////
+function filterGlyphs(world, ids){
+	
+	var imageI=0;
+	var k=0;
+	var clusterI=0;
+	var u=[];
+	var pv=[];
+	var pu=[];
+	var pf=[];
+	var l=0;
+
+	for (var i=1; i< world.nbClusters + 1; i++){
+		pv[i-1]=0;
+		pu[i-1]=0;
+		pf[i-1]=0;
+		world.objets[i].vertices=[];
+		world.objets[i].uvs=[];
+		world.objets[i].faces=[];
+		world.objets[i].ids=[];
+		world.objets[i].uvs2=world.uvs2[i-1];
+	}	 
+
+	for (var j = 0; j < ids.length; j++){	
+		var id = world.dbId[ids[j]];
+
+		if ( id > -1){
+			clusterI=Math.floor(world.glyphs[id]/64);
+			imageI= world.glyphs[id]%64;
+			world.objets[clusterI+1].ids.push( ids[j] );
+
+			for ( k=imageI*12; k<(imageI+1)*12;k++){
+				world.objets[clusterI+1].vertices[pu[clusterI]++] = world.vertices[clusterI][k];
+			}
+			for ( k=imageI*8; k<(imageI+1)*8;k++){
+				world.objets[clusterI+1].uvs[pv[clusterI]++] = world.uvs[k];
+			}
+			for ( k=0; k< rectF.length;k++){
+				world.objets[clusterI+1].faces[pf[clusterI]++] = rectF[k] + (pu[clusterI]-12)/3;
+			}
+		}
+	}	
+	for (var i=1; i < world.nbClusters+1; i++){
+		updateGeometry( world.objets[i] );
+	}
+}
+
+/////////////////////////////////
+//	 
+//	turns in blue the filtred glyphblocks 
+//
+/////////////////////////////////
+function shadeGlyphs(world, ids){
+	var imageI=0;
+	var clusterI=0;
+	var j;
+	var i;
+
+	getAll(world);
+
+	for ( i=1; i< world.nbClusters + 1; i++){
+		world.objets[i].uvs2=[];
+
+		for (var j=0; j < world.uvs2[i-1].length; j++){
+			world.objets[i].uvs2[j] = rectUv4[j%8];
+		}
+		for (var j=2; j < world.objets[i].vertices.length; j+=3){
+			world.objets[i].vertices[j] = -0.5;
+		}
+	}
+	for (i = 0; i < ids.length; i++){
+		var id = world.dbId[ids[i]];
+
+		if ( id > -1){
+			clusterI=Math.floor(world.glyphs[id]/64);
+			imageI= world.glyphs[id]%64;
+
+			for (j=imageI*8; j<(imageI+1)*8;j++){
+				world.objets[clusterI+1].uvs2[j]=rectUv[j%8];
+			}
+			for (j=imageI*12+2; j<(imageI+1)*12;j+=3){
+				world.objets[clusterI+1].vertices[j]=0;
+			}
+		}
+	}
+	prevS=[clusterI+1, imageI*12];
+
+	for ( i=1; i< world.nbClusters + 1; i++){
+		updateGeometry( world.objets[i] );
+	}
+
+}
+
+/////////////////////////////////
+//	 
+// randomizes the positions of glyphblocks
+//
+/////////////////////////////////
+function randomize(world,f){
+	var r = [0,0,0];
+
+	for (var i=1; i<= world.nbClusters; i++){
+
+		for (var j=0; j < world.objets[i].vertices.length; j+=3){
+			if(j%12==0){
+				r[0]=(Math.random()-0.5)*f;
+				r[1]=(Math.random()-0.5)*f;
+			}
+			world.objets[i].vertices[j]+=r[0];
+			world.objets[i].vertices[j+1]+=r[1];
+		}
+		world.bounds[i-1]=bound(world.objets[i].vertices);
+		updateVertex( world.objets[i]);
+	}
+}
+
+/////////////////////////////////
+//
+//	display all glyphblocks
+//
+/////////////////////////////////
+function getAll(world){
+	for (var i=1; i<= world.nbClusters; i++){
+		world.objets[i].vertices = world.vertices[i-1].slice(0);
+		world.objets[i].ids = world.ids[i-1].slice(0);
+		world.objets[i].uvs = world.uvs.slice(0,world.vertices[i-1].length/3*2);
+		world.objets[i].faces = world.faces[i-1].slice(0);
+	}
+}
+
+/////////////////////////////////
+//
+//	input souris and keyboard
+//
+/////////////////////////////////
+var xMouse=0;
+var yMouse=0;
+var xMouse2=0;
+var yMouse2=0;
+
+var xStart=0;
+var yStart=0;
+var zStart=0;
+var deltaX=0;
+
+var maxX=600;
+var maxY=600;
+var turn =false;
+var factorX;
+var factorY;
+var click=[0, 0, -7];
+var cX;
+var cY;
+var canvas;
+var prevS=[1,0];
+var select = [0,-1];
+
+function getX(e){
+	return e.clientX;
+}
+
+function getY(e){
+	return e.clientY;
+}
+
+function getXn(e){
+	return e.changedTouches[0].pageX;
+}
+
+function getYn(e){
+	return e.changedTouches[0].pageY;
+}
+
+/////////////////////////////////
+//
+// touch screen zoom
+//
+/////////////////////////////////
+function mZoome(e){
+  e.preventDefault();
+  var d = Math.abs(e.targetTouches[0].pageX - e.targetTouches[1].pageX);
+
+  if (turn){
+	world.objets[0].pos[2]=zStart*deltaX/d;
+  }
+}
+
+/////////////////////////////////
+//
+// function called when the user move the cursor over the caneva.
+// The function is used to move the clouds if the user is pressing the left button, or to select glyphblocks if the user pass the cursor over them
+//
+/////////////////////////////////
+function mMove(e,getX,getY){
+	e.preventDefault();
+
+	factorY = world.objets[0].pos[2]/80*pMatrix[14]/pMatrix[0];
+	factorX = world.objets[0].pos[2]/60*pMatrix[14]/pMatrix[5];
+	
+	if (turn){
+		world.velocity[0] = (getX(e)-xMouse)*factorX ;
+		world.velocity[1] = -(getY(e)-yMouse)*factorY ;
+		world.objets[0].pos[0]=xStart + world.velocity[0];
+		world.objets[0].pos[1]=yStart + world.velocity[1];
+
+	}else{
+		click[0]=(getX(e)-cX + window.pageXOffset)*factorX;
+		click[1]=-(getY(e)-cY + window.pageYOffset)*factorY;
+
+		for (var i=prevS[1]+2; i<prevS[1]+12;i+=3){
+			world.objets[prevS[0]].vertices[i] = 0;
+		}
+		for (i=prevS[1]/3*2; i < prevS[1]/3*2+8 ;i+=2){
+			world.objets[prevS[0]].uvs2[i] = rectUv[i%8];
+		}
+
+		updateVertex( world.objets[prevS[0]] );
+		select=getCloser(world, click);
+
+		if(select[1]!=-1){
+			var x =  world.objets[select[0]].vertices[select[1]] + world.objets[select[0]].pos[0]+0.3;
+			var y =  world.objets[select[0]].vertices[select[1]+1] + world.objets[select[0]].pos[1] -0.3;
+
+			var fx = (world.objets[select[0]].vertices[select[1]+3] - world.objets[select[0]].vertices[select[1]])*1.3;
+			world.shade.vertices[3]=fx;
+			world.shade.vertices[6]=fx;
+			updateVertex( world.shade );
+			world.shade.pos= [x, y , 0.01];
+
+			for (var i=select[1]+2; i < select[1]+12;i+=3){
+				world.objets[select[0]].vertices[i]=1;
+			}
+			for (i=select[1]/3*2; i < select[1]/3*2+8 ;i+=2){
+				world.objets[select[0]].uvs2[i]=rectUv2[i%8];
+			}
+			updateVertex( world.objets[select[0]] );
+			prevS=select;
+		}else{
+				world.shade.pos= [0, 0 , -100];
+		}
+
+	}
+}
+
+/////////////////////////////////
+//
+// touch screen event
+//
+/////////////////////////////////
+function mDown2(e){
+	turn = true;
+	world.fz=1;
+
+	if (  e.targetTouches.length > 1 ){
+		deltaX = Math.abs(e.targetTouches[0].pageX - e.targetTouches[1].pageX)
+	}
+	xMouse=e.changedTouches[0].pageX;
+	yMouse=e.changedTouches[0].pageY;
+	xStart=world.objets[0].pos[0];
+	yStart=world.objets[0].pos[1];
+	zStart=world.objets[0].pos[2];
+	if(select[1]!=-1){
+			var id =world.objets[select[0]].ids[ select[1]/12 ];
+			getDetail(id);
+	}
+	
+}
+
+/////////////////////////////////
+//
+//	mouse event
+//
+/////////////////////////////////
+function mDown(e){
+  	if (!e.which && e.button) {
+   		if (e.button & 1) e.which = 1      // Left
+    	else if (e.button & 4) e.which = 2 // Middle
+    	else if (e.button & 2) e.which = 3 // Right
+  	}
+	xMouse=e.clientX;
+	yMouse=e.clientY;
+
+	if (e.which==1){
+		turn = true;
+		world.fz=1;
+		xStart=world.objets[0].pos[0];
+		yStart=world.objets[0].pos[1];
+		if(select[1]!=-1){
+			var id =world.objets[select[0]].ids[ select[1]/12 ];
+			getDetail(id);
+		}
+	}
+	if (e.which==2){
+		///	
+	}	
+};
+
+function mUp(){
+	turn = false;
+	world.velocity[0]=0;
+	world.velocity[1]=0;
+		
+}
+
+/////////////////////////////////
+//
+//	events keystrokes
+//
+/////////////////////////////////
+document.onkeydown = function(evt) {
+	evt = evt || window.event;
+	if (evt.keyCode == 90) {
+		if(select[1]!=-1)centerGlyphe(world, select[0], select[1]);
+	}
+};
+
+
+document.onkeyup = function(evt) {
+	world.velocity[2]=0;
+};
+
+/////////////////////////////////
+//
+///zoom using the mouse wheel
+//
+/////////////////////////////////
+function MouseWheelHandler(e){
+	world.fz=2;
+	if(e.wheelDelta>0 || -e.detail>0){
+		world.objets[0].pos[2]+=  -(world.objets[0].pos[2])*0.03 + 0.5;	
+	}else{
+		world.objets[0].pos[2]+=  (world.objets[0].pos[2])*0.03 - 0.5;
+	}
+}
+	
+function getWindowsSize(){
+	maxX=window.innerWidth;
+	maxY=window.innerHeight;
+}
+	
+if (document.addEventListener) {
+	// IE9, Chrome, Safari, Opera
+	document.addEventListener("mousewheel", MouseWheelHandler, false);
+	// Firefox
+	document.addEventListener("DOMMouseScroll", MouseWheelHandler, false);		
+	// IE 6/7/8
+}else{
+	 document.attachEvent("onmousewheel", MouseWheelHandler);
+}
+
+////////////////////////////////
+//
+//	main loop
+//
+////////////////////////////////
+function tick() {
+	gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);	
+
+	var mvMatrix = mat4.create();
+	mat4.identity(mvMatrix);
+		// calculat the matrix of all object
+	transforme(world.objets[0],mvMatrix,world,world.fz);
+
+	if (!turn){
+		popTex(world);
+	}
+	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+	drawScene(world);
+		
+	var id=requestAnimFrame(tick);
+	
+}
+
+/////////////////////////////////////////////
+//
+//             initialization
+//
+/////////////////////////////////////////////
+function webGLStart(world) {
+
+	//webgl initialisation
+    canvas = document.getElementById("canvas");
+
+	canvas.onmousemove=function(e){
+		mMove(e,getX,getY);
+	}
+	canvas.onmousedown=mDown;
+	document.onmouseup=mUp;
+	canvas.ontouchmove=function(e){
+	if(e.targetTouches.length<2){
+		mMove(e,getXn,getYn);
+	}else{
+		mZoome(e);
+		}
+	}
+
+	canvas.ontouchstart=mDown2;
+	canvas.ontouchend=mUp;
+		
+	initGL(canvas,{alpha:false});
+	initShaders();
+
+	gl.clearColor(0.0, 0.0, 0.0, 1.0);
+	gl.enable(gl.DEPTH_TEST);
+	pileTex(world, world.imgShadow);
+	pileTex(world, world.imgFond);
+	LoadMip(world.imgGrille)
+
+	initBuffers(world);
+	initTexture(world);
+
+	cX= canvas.width/2 + canvas.offsetLeft;
+	cY= canvas.height/2 + canvas.offsetTop;
+
+	getWindowsSize();
+	tick();
+}
+</script>
+
+<style>
+#header{
+	background-color: #e0e0e0;
+	padding:5px;
+}
+
+
+#canvas{
+  //position:absolute;
+  //left:100;
+  //margin-left:-400;
+}
+.col{
+	float:left;
+}
+
+.center{
+	position:relative;
+	left: 50%;
+	margin-left:-50px;
+}
+
+.on{
+	border-style: inset;
+	background-color: #666666;
+	color: white;
+}
+
+.off{
+	//background-color:blue;
+	border-style: outset;
+}
+
+.crit{
+	display:block;
+	float:left;
+	width:100px;
+
+}
+
+.h2, h2{
+	font-family: "Ubuntu", sans-serif;
+	font-size: 14px;
+}
+
+.p, p{
+	font-family: "Ubuntu", sans-serif;
+	font-size: 12px;
+}
+
+p{
+	margin:0px;
+	padding:5px;
+}
+
+
+.choice {
+	width: 100px;
+	
+}
+
+
+
+#tree {
+	border-bottom: solid #c0c0c0 1px;
+	background-color: #a0a0a0;
+	padding: 1px;
+	padding-bottom: 0px;
+	//margin-left:0px;
+}
+
+td{
+	padding:5px;
+	margin: 0px;
+	border-bottom: solid #c0c0c0 1px;
+}
+
+table {
+	border-top: solid #a0a0a0 1px;
+	border-left: solid #a0a0a0 1px;
+	border-right: solid #a0a0a0 1px;
+	background-color: white;
+	//border-bottom: solid #a0a0a0 1px;
+
+}
+
+
+li {
+	padding: 5px;
+	margin-bottom: 1px;
+	background-color: white;
+	
+}
+
+
+ul {
+	//border-left: solid #c0c0c0 1px;
+
+}
+
+
+
+#detailBox, #control{
+	position: relative;
+	background-color: #f0f0f0;
+	margin:5px;
+	padding:2px;
+}
+
+
+
+select, button{
+}
+
+
+</style>
+
+</head>
+<body onload="initMenu(),loadDoc(world)" onresize="getWindowsSize()" >
+	<div id="header">
+		<div class="center" id="top">
+		<p>
+		<button class="p " onclick="bestFit(world)" id="fit">See all Glyphblocks</button>
+		 Zoom to the Glyhbblocks :<select id="ids" class="p "></select>
+		<button class="p " data=0 onclick="gridOff(world,this)">grid off</button>
+		<button onclick="randomize(world,1)">add noise</button>
+		</p>
+		</div>
+	</div>
+	<div class="col">
+    	<canvas id="canvas"  width="800" height="600"  >Loading</canvas>
+	</div >
+	<div class="col" id= "menu" >	
+		<select id="codexL" style="display:none">
+			<option>"DRE_CPG"</option>
+			<option>"MAD_GK"</option>
+			<option>"PAR_JS"</option>
+		</select>
+		<select id="countL" style="display:none">
+			<option>1</option>
+			<option>2</option>
+			<option>3</option>
+		</select>
+		<table id="detailD"  style="display:none" cellspacing="0" align="center" >
+			<tr>
+				<td colspan = 4>
+					<p id="gBlock">
+						<b>Glyphblock</b> {3} 
+						<a id="linkD" target="blank" href="http://maaya.unige.ch/codices/{0}/pages/{52}/tols/{53}/glyphblocks/{3}">
+							See details
+						</a>
+						<b>Page</b> {1} <b>Tol</b> {2}
+					</p>
+				</td>
+			</tr>	
+			<tr >
+				<td ><p><b>Phonetic value</b></p></td>
+				<td ><p><b>EVR code</b></p></td>
+				<td ><p><b>Thompson code</b></p></td>
+				<td ><p><b>MV code</b></p></td>
+			</tr>
+		</table>
+		<table style="display:none">
+			<tr id="glyphs" >
+				<td><p>{33}</p></td>
+				<td><p>{10}</p></td>
+				<td><p>{48}</p></td>
+				<td><p>{26}</p></td>
+			</tr>
+		</table>
+
+		<div id="detailBox">
+			<h2 style="text-align:center"> Glyphblock selected <h2>
+			<div id="detail">
+			</div>
+		</div>
+
+		<select class="choice" id="falseL"  style="display:none"><option ></option></select> 
+		<li id ="rInterface" style="display:none">
+			<div class="crit"><p> {op} {crit} </p></div> <span id= "choice_{id}"></span>
+
+			<button class="p" data-s="{id}" id="f{id}" onclick="filter(requete, {id}, {fin}, true, this, filterGlyphs)"> filter </button>
+			<button class="p" data-s="{id}" id="uf{id}" onclick="filter(requete, {id}, {fin}, false, this, filterGlyphs)"  style="display:none"> unfilter </button>
+			<select class="p" id="op_{id}" onChange="document.getElementById('crit_menu{id}').style.display='inline',this.style.display='none'" >
+				<option disabled selected value>Add filter</option>
+				<option>and</option>
+				<option>or</option>
+				<option>in</option>
+			</select>
+
+			<select class="p" id="crit_menu{id}" style="display:none" onChange="growTree({id},requete, {fin},this)" >
+				<option disabled selected value>Chose a criteria</option>
+				<option value="codex" >codex</option>
+				<option value="t_string" >t_string</option>
+				<option value="thompson" >thompson code</option>
+				<option value="mv">mv code</option>
+				<option value="count">count</option>
+				<option value="page">page</option>
+				<option value="tols">tols</option>
+				<option value="false">false</option>
+			</select>
+
+			<button data-s="{id}" onclick="removeBranche({id},{fin},requete, {k})"> X </button>
+
+		</li>
+		<div id="thompson"  style="display:none"></div>
+		<div id="mv" style="display:none"></div>
+		<div id="page" style="display:none"></div>
+		<div id="tols" style="display:none"></div>
+		<div id="control">
+			<h2 style="text-align:center"> Filters criteria <h2>
+			<button onclick="viewFiltredOn(requete,world)">show filtred</button>
+			<button onclick="viewFiltredOff(requete,world)">hide filtred</button>
+			<button onclick="loadCoord(world,requete)">change coord</button>
+			<select id="coord">
+				<option value="o.json">coord1 </option>
+				<option value="o_1.json">coord2 </option>	
+			</select>
+			<ul id ="tree">
+			</ul>
+		</div>
+		<div id = "out">
+		</div>
+	</div>
+</body>
+</html> 
+
